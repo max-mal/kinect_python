@@ -12,6 +12,20 @@ serverPort = 56000
 kinect = Kinect()
 kinect.set_led(0)
 
+video_data = None
+depth_data = None
+
+
+def collect_data():
+    global video_data
+    global depth_data
+    global iterations
+
+    while True:
+        video_data = kinect.get_jpeg(depth=False)
+        depth_data = kinect.get_jpeg(depth=True)
+        time.sleep(config.mjpeg_frame_delay)
+
 
 class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
     """Handle requests in a separate thread."""
@@ -69,12 +83,22 @@ class WebServer(BaseHTTPRequestHandler):
             self.route_404()
 
     def route_jpeg(self, depth=False):
+        global video_data
+        global depth_data
+
+        if depth:
+            data = depth_data
+        else:
+            data = video_data
+
+        if not data:
+            self.send_response(500)
+            self.end_headers()
+            return
+
         self.send_response(200)
         self.send_header("Content-type", "image/jpeg")
         self.end_headers()
-        print("Getting image")
-        data = kinect.get_jpeg(depth)
-        print("Got image")
         self.wfile.write(data.getbuffer())
 
     def route_mjpeg(self, depth=False):
@@ -88,11 +112,17 @@ class WebServer(BaseHTTPRequestHandler):
 
         while True:
             try:
-                data = kinect.get_jpeg(depth)
+                if depth:
+                    data = depth_data
+                else:
+                    data = video_data
+
+                if not data:
+                    continue
+
                 buffer = data.getbuffer()
                 self.wfile.write("--jpgboundary\r\n".encode())
                 self.send_header('Content-type', 'image/jpeg')
-                # self.send_header('Content-length', str(buffer.nbytes))
                 self.end_headers()
                 self.wfile.write(buffer)
                 time.sleep(config.mjpeg_frame_delay)
@@ -126,6 +156,10 @@ class WebServer(BaseHTTPRequestHandler):
     def start(_config: Config):
         global config
         config = _config
+
+        t1 = threading.Thread(target=collect_data, name='t1')
+        t1.start()
+
         server = ThreadedHTTPServer((config.server_addr, config.server_port), WebServer)
         print('Starting server, use <Ctrl-C> to stop')
         server.serve_forever()

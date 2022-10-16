@@ -22,6 +22,7 @@ class Kinect:
         if depth:
             image, _t = freenect.sync_get_depth()
             image = self.pretty_depth(image)
+            image = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
         else:
             image, _t = freenect.sync_get_video()
             image = self.video_cv(image)
